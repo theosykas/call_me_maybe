@@ -10,7 +10,7 @@ install:
 
 run:
 	@echo "executing (LLM) Call_Me_Maybe"
-	$(PYTHON) $(MAIN_FILES) $(CONFIG_FILE)
+	$(PYTHON) $(MAIN_FILES)
 
 clean:
 	@echo "remove files"
