@@ -1,5 +1,5 @@
+from typing import Dict, Optional, List
 from pydantic import BaseModel, Field
-from typing import Dict, Optional
 import json
 import os
 
@@ -19,7 +19,7 @@ class JsonParser:
     def __init__(self, path: Optional[str]) -> None:
         self.path = path
 
-    def read_json(self) -> None:
+    def read_json(self) -> List[str]:
         try:
             with open(self.path, "r") as file:
                 data = json.load(file)
@@ -28,15 +28,19 @@ class JsonParser:
             print("Error file is not found")
         except json.JSONDecodeError:
             print("invalid format of json file")
+        return None
 
     # makedirs / directory nested(imbriquer)
-    def create_output(self, data_saving: str) -> None:
+    # create format json
+    def create_json(self, data_write: str) -> List[str]:
         try:
             os.makedirs(os.path.dirname(self.path), exist_ok=True)  # check avec exist_ok si le files exist
             with open(self.path, "w", encoding="UTF-8") as output_file:
-                data_output = json.dump(data_saving, output_file, indent=4)
+                data_output = json.dump(data_write, output_file, indent=4)
+                return data_output
         except OSError:
             print(f"Directory {self.path} can not be created")
+        return None
 
 # __enter__ overhide with ([\n)
 # __exit__ (]\n)

@@ -22,8 +22,14 @@ def main():
     reader_json = JsonParser(args.input)
     read_test = reader_json.read_json()
     output_create = JsonParser(args.output)
-    output_created = output_create.create_output(read_functions)
+    output_created = output_create.create_json(read_functions)
 
+
+# writer = JsonParser(args.output)
+# writer.create_json(final_output)
 
 if __name__ == "__main__":
     main()
+
+
+# https://www.promptingguide.ai/applications/function_calling
