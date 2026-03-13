@@ -19,9 +19,10 @@ def main():
     args = parse_arg.parse_args()
     function_reader = JsonParser(args.functions_definition)  # default value
     read_functions = function_reader.read_json()
-    if args.input:
-        test_reader = JsonParser(args.input)
-        read_test = test_reader.read_json()
+    test_reader = JsonParser(args.input)
+    read_test = test_reader.read_json()
+    output_create = JsonParser(args.output)
+    output_created = output_create.create_output(read_test)
 
 
 if __name__ == "__main__":
