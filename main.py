@@ -17,12 +17,12 @@ def main():
         default="data/output/function_calls.json"
     )
     args = parse_arg.parse_args()
-    function_reader = JsonParser(args.functions_definition)  # default value
-    read_functions = function_reader.read_json()
-    test_reader = JsonParser(args.input)
-    read_test = test_reader.read_json()
+    function_json = JsonParser(args.functions_definition)  # default value
+    read_functions = function_json.read_json()
+    reader_json = JsonParser(args.input)
+    read_test = reader_json.read_json()
     output_create = JsonParser(args.output)
-    output_created = output_create.create_output(read_test)
+    output_created = output_create.create_output(read_functions)
 
 
 if __name__ == "__main__":

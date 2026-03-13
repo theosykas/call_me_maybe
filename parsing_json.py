@@ -35,7 +35,6 @@ class JsonParser:
             os.makedirs(os.path.dirname(self.path), exist_ok=True)  # check avec exist_ok si le files exist
             with open(self.path, "w", encoding="UTF-8") as output_file:
                 data_output = json.dump(data_saving, output_file, indent=4)
-                print(data_output)
         except OSError:
             print(f"Directory {self.path} can not be created")
 
