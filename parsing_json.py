@@ -31,10 +31,10 @@ class JsonParser:
         return None
 
     # makedirs / directory nested(imbriquer)
-    # create format json
+    # (dumps) -- create format json
     def create_json(self, data_write: str) -> List[str]:
         try:
-            os.makedirs(os.path.dirname(self.path), exist_ok=True)  # check avec exist_ok si le files exist
+            os.makedirs(os.path.dirname(self.path), exist_ok=True)
             with open(self.path, "w", encoding="UTF-8") as output_file:
                 data_output = json.dump(data_write, output_file, indent=4)
                 return data_output

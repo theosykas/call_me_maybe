@@ -1,8 +1,13 @@
 from parsing_json import JsonParser
+from init_sdk import init_llm
 import argparse
 
 
 def main():
+    qwen_model = init_llm(model_name="Qwen/Qwen3-0.6B")
+    print('charged qwen model llm_sdk\n')
+    tokens = qwen_model.encode("hello World\n")
+    print(f'token test {tokens}')
     parse_arg = argparse.ArgumentParser()
     parse_arg.add_argument(
         "--functions_definition",
@@ -22,7 +27,7 @@ def main():
     reader_json = JsonParser(args.input)
     read_test = reader_json.read_json()
     output_create = JsonParser(args.output)
-    output_created = output_create.create_json(read_functions)
+    output_created = output_create.create_json(read_test)
 
 
 # writer = JsonParser(args.output)
@@ -30,6 +35,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-# https://www.promptingguide.ai/applications/function_calling

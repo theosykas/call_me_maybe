@@ -1,6 +1,7 @@
-# from llm_sdk import Small_LLM_Model
+from llm_sdk.llm_sdk import Small_LLM_Model
+# import torch
 
 
-# def init_llm():
-#     llm_qwen = Small_LLM_Model() #instencie mon llm_sdk/ tr text in "logits"
-#     get_vocabulary =
+def init_llm(model_name: str):
+    llm_qwen = Small_LLM_Model()
+    return llm_qwen
