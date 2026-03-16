@@ -16,20 +16,59 @@ class FunctionDefinition(BaseModel):
     returns: Dict[str, str] = Field(min_length=1)
 
     @staticmethod
-    def constrain_decoding(llm: Small_LLM_Model, user_prompt: str,
+    def constrain_decoding(llm: Small_LLM_Model, input_ids: List[int],
                            allowed_token: List[int]) -> List[int]:
-        # encode le prompt[0]
-        input_id = llm.encode(user_prompt).tolist()[0]  # tokenization of prompt tolist() == list cpy
-        logits_list = llm.get_logits_from_input_ids(input_id)  # recuperer tout les lgits brut
+        logits_list = llm.get_logits_from_input_ids(input_ids)  # recuperer tout les logits brut
         # logits_list = [1, 456, 54]
+        allowed = set(allowed_token)  # opti avant for
         vocab_size = len(logits_list)
         for mask in range(vocab_size):
-            if mask not in allowed_token:
+            if mask not in allowed:
                 logits_list[mask] = -float("inf")  # ecrase les scores par -inf
-            return logits_list
         max_logits = max(logits_list)  # trouve le plus proche du max
         next_token_id = logits_list.index(max_logits)
         return next_token_id
+
+    def generate_constrain_json(llm: Small_LLM_Model, user_prompt: str,
+                                allowed_token: List[int]) -> List[str]:
+        current_input = llm.encode(user_prompt).tolist()[0]
+        generate_ids: List[str] = []
+        max_token: int = 128
+        for _ in range(max_token):
+            next_id = FunctionDefinition.constrain_decoding(
+                llm, current_input, allowed_token  # who is best -> token
+            )
+            current_input.append(next_id)
+            generate_ids.append(next_id)
+            last_token = llm.decode([next_id])
+            if '}' in last_token:
+                break  # soit un , ou } il en faut un pour passer au prochain
+        return llm.decode(generate_ids)  # decode uniquement ce que on a generer
+
+
+class JsonWriter:
+    def __init__(self, path: str) -> None:
+        self.path = path
+        self.json_file = None
+        self.coma = True  # char premier
+
+    def __enter__(self) -> 'JsonWriter':
+        self.json_file = open(self.path, "w")
+        self.json_file.write('[\n')
+        return (self)
+
+    def __exit__(self, exec_t, exec_v, exec_tb) -> 'JsonWriter':
+        if self.json_file:
+            self.json_file.write('\n]')
+            self.json_file.close()
+        return (self)
+
+    def write_json(self, data: Dict) -> 'JsonWriter':
+        if self.coma:
+            self.json_file.write(',\n')
+        json_data = json.dumps(data, indent='\t')
+        self.coma = False
+        self.json_file.write(json_data)
 
 
 class JsonParser:
@@ -49,7 +88,7 @@ class JsonParser:
 
     # makedirs / directory nested(imbriquer)
     # (dumps) -- create format json
-    def create_json(self, data_write: str) -> List[str]:
+    def create_ouptut(self, data_write: str) -> List[str]:
         try:
             os.makedirs(os.path.dirname(self.path), exist_ok=True)
             with open(self.path, "w", encoding="UTF-8") as output_file:
@@ -58,8 +97,5 @@ class JsonParser:
         except OSError:
             print(f"Directory {self.path} can not be created")
         return None
-
-# __enter__ overhide with ([\n)
-# __exit__ (]\n)
 
 # -inf == (-float('inf')) == 0% float - inf

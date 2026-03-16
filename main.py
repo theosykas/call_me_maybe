@@ -3,7 +3,7 @@ from init_sdk import init_llm
 import argparse
 
 
-def main():
+def main() -> None:
     qwen_model = init_llm(model_name="Qwen/Qwen3-0.6B")
     print('charged qwen model llm_sdk\n')
     tokens = qwen_model.encode("hello World\n")
@@ -27,11 +27,11 @@ def main():
     reader_json = JsonParser(args.input)
     read_test = reader_json.read_json()
     output_create = JsonParser(args.output)
-    output_created = output_create.create_json(read_test)
-
+    output_created = output_create.create_output(read_test)
 
 # writer = JsonParser(args.output)
-# writer.create_json(final_output)
+# writer.generate_constrain_json(final_output)
+
 
 if __name__ == "__main__":
     main()
