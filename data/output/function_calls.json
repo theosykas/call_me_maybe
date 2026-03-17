@@ -1,35 +1,82 @@
 [
-	{
-		"prompt": "What is the sum of 2 and 3?"
-	},
-	{
-		"prompt": "What is the sum of 265 and 345?"
-	},
-	{
-		"prompt": "Greet shrek"
-	},
-	{
-		"prompt": "Greet john"
-	},
-	{
-		"prompt": "Reverse the string 'hello'"
-	},
-	{
-		"prompt": "Reverse the string 'world'"
-	},
-	{
-		"prompt": "What is the square root of 16?"
-	},
-	{
-		"prompt": "Calculate the square root of 144"
-	},
-	{
-		"prompt": "Replace all numbers in \"Hello 34 I'm 233 years old\" with NUMBERS"
-	},
-	{
-		"prompt": "Replace all vowels in 'Programming is fun' with asterisks"
-	},
-	{
-		"prompt": "Substitute the word 'cat' with 'dog' in 'The cat sat on the mat with another cat'"
+{
+	"prompt": "What is the sum of 2 and 3?",
+	"name": "fn_add_numbers",
+	"parameters": {
+		"a": 2,
+		"b": 3
 	}
+},
+{
+	"prompt": "What is the sum of 265 and 345?",
+	"name": "fn_add_numbers",
+	"parameters": {
+		"a": 265,
+		"b": 345
+	}
+},
+{
+	"prompt": "Greet shrek",
+	"name": "shrek",
+	"parameters": {
+		"name": "shrek"
+	}
+},
+{
+	"prompt": "Greet john",
+	"name": "john",
+	"parameters": {
+		"name": "john"
+	}
+},
+{
+	"prompt": "Reverse the string 'hello'",
+	"name": "user",
+	"parameters": {
+		"source_string": "hello",
+		"regex": "",
+		"replacement": ""
+	}
+},
+{
+	"prompt": "Reverse the string 'world'",
+	"name": "user",
+	"parameters": {
+		"source_string": "world",
+		"regex": "",
+		"replacement": ""
+	}
+},
+{
+	"prompt": "What is the square root of 16?",
+	"name": "fn_get_square_root",
+	"parameters": {
+		"a": "16"
+	}
+},
+{
+	"prompt": "Calculate the square root of 144",
+	"name": "fn_get_square_root",
+	"parameters": {
+		"a": "144"
+	}
+},
+{
+	"prompt": "Replace all vowels in 'Programming is fun' with asterisks",
+	"name": "fn_substitute_string_with_regex",
+	"parameters": {
+		"source_string": "Programming is fun",
+		"regex": "([aeiouAEIOU])",
+		"replacement": "*"
+	}
+},
+{
+	"prompt": "Substitute the word 'cat' with 'dog' in 'The cat sat on the mat with another cat'",
+	"name": "substitute_string_with_regex",
+	"parameters": {
+		"source_string": "The cat sat on the mat with another cat",
+		"regex": "cat",
+		"replacement": "dog"
+	}
+}
 ]
