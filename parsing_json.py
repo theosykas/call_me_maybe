@@ -32,18 +32,22 @@ class FunctionDefinition(BaseModel):
         next_token_id = logits_list.index(max_logits)
         return next_token_id
 
+    @staticmethod
     def format_argument(args: Dict[str, ParamInput]) -> str:
         return str(list(args.keys()))
 
     # text_to_prompt = [0] fn.name = fn_add_nb fn.description = fn.decription args = [a, b]
+    @staticmethod
     def function_catalog(functions: List["FunctionDefinition"]) -> str:
         catalog_function = ""
         for i, fn in enumerate(functions):
             args_list = FunctionDefinition.format_argument(fn.parameters)
-            catalog_function += f"[{i}] {fn.name}: {fn.description}\n"
-            catalog_function += f"Args: {args_list}\n\n"
+            catalog_function += f"ID: [{i}] | FUNCTION_NAME '{fn.name}'\n"
+            catalog_function += f"DESCRIPTION: {fn.description}\n"
+            catalog_function += f"Args: {args_list}\n"
         return catalog_function
 
+    @staticmethod
     def check_brace(count_brace: int, token_str: str) -> int:
         count_brace += token_str.count("{")
         count_brace -= token_str.count("}")
@@ -51,9 +55,10 @@ class FunctionDefinition(BaseModel):
 
     # LLM Response Prefixing == systeme_prompt
     def generate_constrain_json(
-        llm: Small_LLM_Model, user_prompt: str, catalog: str, allowed_token: List[int]
-    ) -> List[str]:
-        formated_ouput = f'{{"prompt": "{user_prompt}", "name": "'
+        llm: Small_LLM_Model, user_prompt: str,
+            catalog: str, allowed_token: List[int]) -> List[str]:
+        user_escape_char = user_prompt.replace('"', '\\"')
+        formated_ouput = f'{{"prompt": "{user_escape_char}", "name": "'
         # str start: '{' end: '}'
         systeme_prompt = (
             "### Role\n"
@@ -62,8 +67,12 @@ class FunctionDefinition(BaseModel):
             "### Available Catalog\n"
             f"{catalog}"
             "### Task\n"
-            "Output a single JSON object with the keys 'prompt', 'name', and 'parameters'.\n\n"
-            "### User Request\n"
+            "### Formatting Rules\n"
+            "1. Output a single JSON object with the keys 'prompt', 'name', and 'parameters'.\n"
+            "2. TYPE-SPECIFIC RULES:\n"
+            "   - If a parameter is defined as 'number' in the catalog: Use float format (e.g., 2.0, 144.0).\n"
+            "   - If a parameter is defined as 'string' in the catalog: Keep it as a string. NEVER convert text to numbers.\n"
+            "3. Do not add any text or explanation."
             f'"{user_prompt}"\n\n'
             "### Output\n"
             f"{formated_ouput}"
@@ -79,7 +88,8 @@ class FunctionDefinition(BaseModel):
             current_input.append(next_id)
             generate_ids.append(next_id)
             last_token = llm.decode([next_id])
-            brace_count = FunctionDefinition.check_brace(brace_count, last_token)
+            brace_count = FunctionDefinition.check_brace(
+                brace_count, last_token)
             if brace_count == 0:
                 break
         generated_qwery = llm.decode(
@@ -100,13 +110,13 @@ class JsonWriter:
         self.json_file.write("[\n")
         return self
 
-    def __exit__(self, exec_t, exec_v, exec_tb) -> "JsonWriter":
+    def __exit__(self, exec_t, exec_v, exec_tb) -> None:
         if self.json_file:
             self.json_file.write("\n]")
             self.json_file.close()
         return self
 
-    def write_json(self, data: Dict) -> "JsonWriter":
+    def write_json(self, data: Dict) -> None:
         if not self.coma:
             self.json_file.write(",\n")
         json_data = json.dumps(data, indent="\t")
