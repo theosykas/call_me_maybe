@@ -16,10 +16,10 @@
 	}
 },
 {
-	"prompt": "Greet shrek",
+	"prompt": "Greet Shrek",
 	"name": "fn_greet",
 	"parameters": {
-		"name": "shrek"
+		"name": "Shrek"
 	}
 },
 {
@@ -41,6 +41,20 @@
 	"name": "fn_reverse_string",
 	"parameters": {
 		"s": "world"
+	}
+},
+{
+	"prompt": "What is the square root of 16?",
+	"name": "fn_get_square_root",
+	"parameters": {
+		"a": 16.0
+	}
+},
+{
+	"prompt": "Calculate the square root of 144",
+	"name": "fn_get_square_root",
+	"parameters": {
+		"a": 144.0
 	}
 }
 ]
