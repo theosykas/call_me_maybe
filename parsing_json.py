@@ -16,10 +16,12 @@ class FunctionDefinition(BaseModel):
     returns: Dict[str, str] = Field(min_length=1)
 
     @staticmethod
-    def get_allowed_token(prefix: str,
-                          valid_token: List[int],
-                          token_map: Dict[int, str],
-                          mode: str = "string") -> List[int]:
+    def get_allowed_token(
+        prefix: str,
+        valid_token: List[int],
+        token_map: Dict[int, str],
+        mode: str = "string",
+    ) -> List[int]:
         allowed_token = []
         for token_id, token_str in token_map.items():  # lit pre calcul dict (map)
             if mode == "number":
@@ -30,7 +32,21 @@ class FunctionDefinition(BaseModel):
                 else:
                     allowed_token.append(token_id)
             elif mode == "string":
-                allowed_token.append(token_id)
+                if '"' not in token_str:  # autorise tout les token
+                    allowed_token.append(token_id)
+                elif token_str == '"':  # dernier guillemet seul "
+                    allowed_token.append(token_id)
+                elif token_str == '\\"':
+                    if prefix.endswith('\\') and not prefix.endswith('\\\\'):
+                        allowed_token.append(token_id)
+            elif mode == "regex":
+                if '"' not in token_str and '|' not in token_str:  # autorise tout les token
+                    allowed_token.append(token_id)
+                elif token_str == '"':  # dernier guillemet seul "
+                    allowed_token.append(token_id)
+                elif token_str == '\\"':
+                    if prefix.endswith('\\') and not prefix.endswith('\\\\'):
+                        allowed_token.append(token_id)
             else:
                 corresponding = False  # mis a false a chaques iterations
                 combined = prefix + token_str
@@ -41,7 +57,7 @@ class FunctionDefinition(BaseModel):
                 if corresponding:
                     allowed_token.append(token_id)  # add token id to set allowed token
                     continue  # -> next_token
-                if token_str == '"':  # end of word
+                if token_str == '"':  # end of word nom complet
                     for choice in valid_token:
                         if prefix == choice:
                             allowed_token.append(token_id)
@@ -55,14 +71,16 @@ class FunctionDefinition(BaseModel):
         input_ids: List[int],
         allowed_token: List[str],
         token_map: Dict[int, str],
-            mode: str = "string") -> List[int]:
+        mode: str = "string",
+    ) -> List[int]:
         logits_list = llm.get_logits_from_input_ids(
             input_ids
         )  # recuperer tout les logits brut
         # logits_list = [1, 456, 54]
         allowed_token = set(allowed_token)
-        token_selection = FunctionDefinition.get_allowed_token(
-            current_prefix, allowed_token, token_map, mode)
+        token_selection = set(FunctionDefinition.get_allowed_token(
+            current_prefix, allowed_token, token_map, mode
+        ))
         vocab_size = len(logits_list)
         for mask in range(vocab_size):
             if mask not in token_selection:
@@ -86,21 +104,16 @@ class FunctionDefinition(BaseModel):
             catalog_function += f"Args: {args_list}\n"
         return catalog_function
 
-    # @staticmethod
-    # def check_brace(count_brace: int, token_str: str) -> int:
-    #     count_brace += token_str.count("{")
-    #     count_brace -= token_str.count("}")
-    #     return count_brace
-
     @staticmethod
     def generate_constrain_json(
         llm: Small_LLM_Model,
         user_prompt: str,
         catalog: str,
         functions_reader: List["FunctionDefinition"],
-            token_map: Dict[int, str]) -> str:
-        # user_escape = user_prompt.replace('"', '\\"')
-        formated_ouput = f'{{"prompt": "{user_prompt}", "name": "'
+        token_map: Dict[int, str],
+    ) -> str:
+        user_escape = user_prompt.replace('\\', '\\\\').replace('"', '\\"')
+        formated_ouput = f'{{"prompt": "{user_escape}", "name": "'
         systeme_prompt = (
             "### Role\n"
             "You are an intelligent API Router. You map natural language "
@@ -108,59 +121,96 @@ class FunctionDefinition(BaseModel):
             "### Available Tools\n"
             f"{catalog}\n"
             "### User Request\n"
-            f'"{user_prompt}"\n\n'
+            f'"{user_escape}"\n\n'
             "### Task\n"
             "1. Analyze the verbs and nouns in the User Request.\n"
             "2. Find the 'Action' in the Available Tools "
             "list that matches the request.\n"
             "3. Select the corresponding ID number in catalog.\n\n"
+            "### Regex Rules (for fn_substitute_string_with_regex)\n"
+            "When the chosen function requires a regex parameter, follow these rules:\n"
+            "- Match digits: use [0-9] or \\d+\n"
+            "- Match vowels: use [aeiou]\n"
+            "- Match a specific word exactly: use the word as-is (e.g. cat)\n"
+            "- Keep the regex as SHORT and SIMPLE as possible\n"
+            "- NEVER chain patterns with | or \\w+ repeatedly\n"
+            "- ONE pattern only, no alternations\n\n"
             "### Output\n"
             f"{formated_ouput}"
         )
-        current_input = llm.encode(systeme_prompt + formated_ouput).tolist()[0]
+        current_input = llm.encode(systeme_prompt).tolist()[0]
         generate_ids = []
         current_prefix = ""
-        fn_names = [fn.name for fn in functions_reader]
-        max_token = 64
+        fn_names = [fn.name for fn in functions_reader]  # fn_greet ...
+        max_token = 128
+        chose_fn = None
         for _ in range(max_token):
-            next_id = FunctionDefinition.constrain_decoding(
-                llm, current_prefix, current_input, fn_names, token_map, mode="catalog"
+            next_id = FunctionDefinition.constrain_decoding(  # seul token == fn_name
+                llm,
+                current_prefix,
+                current_input,
+                fn_names,
+                token_map,
+                mode="catalog"
             )
             current_input.append(next_id)
-            generate_ids.append(next_id)
+            generate_ids.append(next_id)  # token fn_name
             last_token = llm.decode([next_id])
-            if last_token == '"':
+            if last_token == '"':  # last '"'
                 break
-            current_prefix += last_token
-        chose_function = next((f for f in functions_reader if f.name == current_prefix), None)
-        if chose_function:
+            current_prefix += last_token  # == fn_greet
+        for fn in functions_reader:
+            if fn.name != current_prefix:
+                continue
+            chose_fn = fn
+            break
+        if chose_fn:
             param_bridge = ', "parameters": {'
             bridge_ids = llm.encode(param_bridge).tolist()[0]
             current_input.extend(bridge_ids)
             generate_ids.extend(bridge_ids)
-            params = list(chose_function.parameters.items())
-            for i, (p_name, p_info) in enumerate(params):
+            params = list(chose_fn.parameters.items())
+            for i, (p_name, p_info) in enumerate(params):  # boucle sur les enum param name: string
                 key_str = f' "{p_name}": '
-                if p_info.type == "string":
-                    key_str += '"'
+                val_mode = p_info.type
+                if p_name == "regex":
+                    val_mode = "regex"
+                if val_mode in ("string", "regex"):
+                    key_str += '"'  # ouvre les "
                 key_ids = llm.encode(key_str).tolist()[0]
                 current_input.extend(key_ids)
                 generate_ids.extend(key_ids)
                 current_prefix = ""
-                val_mode = p_info.type
-                # number_max_token = 16
-                for _ in range(max_token):
+                # val_mode = p_info.type
+                for _ in range(max_token):  # str or number
                     next_id = FunctionDefinition.constrain_decoding(
-                        llm, current_prefix, current_input, [], token_map, mode=val_mode
+                        llm,
+                        current_prefix,
+                        current_input,
+                        [],
+                        token_map,
+                        mode=val_mode
                     )
                     current_input.append(next_id)
                     generate_ids.append(next_id)
                     token_str = llm.decode([next_id])
-                    current_prefix += token_str
-                    if val_mode == "string" and token_str == '"':
-                        break
-                    if val_mode == "number" and "." in current_prefix and current_prefix[-1].isdigit():
-                        break
+                    last_token = '"'
+                    if val_mode in ("string", "regex"):  # and token_str == last_token:
+                        backslash_count = 0
+                        for char in reversed(current_prefix):
+                            if char == "\\":
+                                backslash_count += 1
+                            else:
+                                break
+                        current_prefix += token_str  # accumule
+                        if token_str == '"' and backslash_count % 2 == 0:
+                            break
+                    if val_mode == "number":
+                        current_prefix += token_str
+                        after_dote = current_prefix.split(".")
+                        if len(after_dote) > 1 and len(after_dote[-1]) >= 1:
+                            break
+                    # on stop sur un nb complet ou sur un "
                 if i < len(params) - 1:
                     sep = ", "
                     sep_ids = llm.encode(sep).tolist()[0]

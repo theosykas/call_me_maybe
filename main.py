@@ -27,7 +27,6 @@ def main() -> None:
     voc_size = len(qwen_model.get_logits_from_input_ids(
         qwen_model.encode(" ").tolist()[0]))  # generation all ids token
     token_map = {i: qwen_model.decode([i]) for i in range(voc_size)}
-    # valid_choice = [fn.name for fn in functions_reader]
     JsonParser(args.output).create_ouptut([])
     with JsonWriter(args.output) as write:
         for case_input in generate_output:
@@ -41,7 +40,7 @@ def main() -> None:
             )
             try:
                 data_dict = json.loads(generate_json)
-                print('valid Json\n\n')
+                print('valid Json\n')
                 print(generate_json)
                 write.write_json(data_dict)
             except Exception as e:

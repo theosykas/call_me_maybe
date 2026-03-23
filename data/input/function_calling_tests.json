@@ -1,12 +1,15 @@
 [
   {
+    "prompt": "Replace all numbers in \"Hello 34 I'm 233 years old\" with NUMBERS"
+  },
+  {
     "prompt": "What is the sum of 2 and 3?"
   },
   {
     "prompt": "What is the sum of 265 and 345?"
   },
   {
-    "prompt": "Greet Shrek"
+    "prompt": "Greet shrek"
   },
   {
     "prompt": "Greet john"
@@ -22,9 +25,6 @@
   },
   {
     "prompt": "Calculate the square root of 144"
-  },
-  {
-    "prompt": "Replace all numbers in \"Hello 34 I'm 233 years old\" with NUMBERS"
   },
   {
     "prompt": "Replace all vowels in 'Programming is fun' with asterisks"
