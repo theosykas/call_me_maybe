@@ -22,6 +22,43 @@ class FunctionDefinition(BaseModel):
         token_map: Dict[int, str],
         mode: str = "string",
     ) -> List[int]:
+        """
+    Filter tokens based on allowed characters and patterns for
+    constrained text generation.
+
+    This static method filters a token map to return only token
+    IDs that meet specific
+    constraints depending on the parsing mode. It's used to restrict token
+    generation to
+    valid continuations based on the current prefix and valid token options.
+
+    Args:
+        prefix (str): The current text prefix being built up during generation.
+        valid_token (List[int]): A list of valid token strings or choices that
+        can follow.
+        token_map (Dict[int, str]): A mapping of token IDs to their string
+        representations.
+        mode (str, optional): The filtering mode. Defaults to "string".
+            - "number": Only allows tokens
+            containing numeric characters (0-9.-).
+            - "string": Filters tokens for JSON string parsing,
+            handling quotes and escapes.
+            - "regex": Filters tokens for regex patterns,
+            excluding special characters.
+            - Other: Filters tokens that are valid prefixes of
+            choices in valid_token.
+
+        Returns:
+        List[int]: A list of token IDs that satisfy the constraints of the
+        given mode.
+
+        Examples:
+        - In "number" mode, filters to only numeric tokens.
+        - In "string" mode, handles JSON string escaping and quote validation.
+        - In "regex" mode, excludes regex special characters and newlines.
+        - In default mode, ensures tokens are valid continuations of
+        valid_token choices.
+        """
         allowed_token = []
         for token_id, token_str in token_map.items():  # lit pre calcul dict (map)
             if mode == "number":
@@ -45,21 +82,24 @@ class FunctionDefinition(BaseModel):
                 if prefix == "":
                     if token_str.startswith(" "):
                         continue
-                # if prefix.count('*') + token_str.count('*') > 1:
-                #     continue
                 if '"' not in token_str:  # autorise tout les token
                     allowed_token.append(token_id)
                 elif token_str == '"':  # dernier guillemet seul "
                     allowed_token.append(token_id)
                 elif token_str == '\\"':
-                    if prefix.endswith('\\') and not prefix.endswith('\\\\'):
+                    if prefix.endswith("\\") and not prefix.endswith("\\\\"):
                         allowed_token.append(token_id)
             elif mode == "regex":
                 if "\n" in token_str or "\r" in token_str:
                     continue
-                if " " in token_str or '|' in token_str or '.' in token_str or '*' in token_str:
+                if (
+                    " " in token_str
+                    or "|" in token_str
+                    or "." in token_str
+                    or "*" in token_str
+                ):
                     continue
-                forbiden = set(['\\', '\n', '"'])
+                forbiden = set(["\\", "\n", '"'])
                 valid = True
                 for c in forbiden:
                     if c in token_str:
@@ -100,9 +140,11 @@ class FunctionDefinition(BaseModel):
         )  # recuperer tout les logits brut
         # logits_list = [1, 456, 54]
         allowed_token = set(allowed_token)
-        token_selection = set(FunctionDefinition.get_allowed_token(
-            current_prefix, allowed_token, token_map, mode
-        ))
+        token_selection = set(
+            FunctionDefinition.get_allowed_token(
+                current_prefix, allowed_token, token_map, mode
+            )
+        )
         vocab_size = len(logits_list)
         for mask in range(vocab_size):
             if mask not in token_selection:
@@ -113,8 +155,8 @@ class FunctionDefinition(BaseModel):
                 quotes_ids = token_id
                 break
         if quotes_ids is not None:
-            if mode == "regex" and current_prefix.endswith(')'):
-                logits_list[quotes_ids] += 50.0  # augmente la probabilité de fermeture 
+            if mode == "regex" and current_prefix.endswith(")"):
+                logits_list[quotes_ids] += 50.0  # augmente la probabilité de fermeture
         max_logits = max(logits_list)  # trouve le plus proche du max
         next_token_id = logits_list.index(max_logits)
         return next_token_id
@@ -142,26 +184,8 @@ class FunctionDefinition(BaseModel):
         functions_reader: List["FunctionDefinition"],
         token_map: Dict[int, str],
     ) -> str:
-        user_escape = user_prompt.replace('\\', '\\\\').replace('"', '\\"')
+        user_escape = user_prompt.replace("\\", "\\\\").replace('"', '\\"')
         formated_ouput = f'{{"prompt": "{user_escape}", "name": "'
-        # systeme_prompt = (
-        #     "### Role\n"
-        #     "You are an API Router. You extract parameters from User Requests to build a valid JSON.\n\n"
-        #     "### Available Tools\n"
-        #     f"{catalog}\n"
-        #     "### Regex Rules\n"
-        #     "You MUST write the shortest and most accurate regex possible. NEVER use '.*' or wildcards. Use exact syntax:\n"
-        #     "- vowels → ([aeiouAEIOU])\n"
-        #     "- digits → ([0-9]+)\n"
-        #     "- exact word → the word itself (e.g. cat)\n\n"
-        #     "### User Request\n"
-        #     f'"{user_escape}"\n\n'
-        #     "### Task\n"
-        #     "1. Find the correct Action.\n"
-        #     "2. Extract the exact parameters.\n\n"
-        #     "### Output\n"
-        #     f"{formated_ouput}"
-        # )
         systeme_prompt = (
             "### ROLE\n"
             "You are a High-Precision Value Extractor. Your task is to identify the correct function and provide the exact raw values for its parameters based on the User Request.\n\n"
@@ -190,12 +214,7 @@ class FunctionDefinition(BaseModel):
         chose_fn = None
         for _ in range(max_token):
             next_id = FunctionDefinition.constrain_decoding(  # seul token == fn_name
-                llm,
-                current_prefix,
-                current_input,
-                fn_names,
-                token_map,
-                mode="catalog"
+                llm, current_prefix, current_input, fn_names, token_map, mode="catalog"
             )
             current_input.append(next_id)
             generate_ids.append(next_id)  # token fn_name
@@ -215,7 +234,9 @@ class FunctionDefinition(BaseModel):
             current_input.extend(bridge_ids)
             generate_ids.extend(bridge_ids)
             params = list(chose_fn.parameters.items())
-            for i, (p_name, p_info) in enumerate(params):  # boucle sur les enum param name: string
+            for i, (p_name, p_info) in enumerate(
+                params
+            ):  # boucle sur les enum param name: string
                 key_str = f' "{p_name}": '
                 val_mode = p_info.type
                 if p_name == "regex":
@@ -231,7 +252,6 @@ class FunctionDefinition(BaseModel):
                     valid_source = [user_prompt]
                 else:
                     valid_source = []
-                # valid_source = [user_prompt] if val_mode == "string" else []
                 for _ in range(max_token):  # str or number
                     next_id = FunctionDefinition.constrain_decoding(
                         llm,
@@ -239,7 +259,7 @@ class FunctionDefinition(BaseModel):
                         current_input,
                         valid_source,
                         token_map,
-                        mode=val_mode
+                        mode=val_mode,
                     )
                     current_input.append(next_id)
                     generate_ids.append(next_id)
@@ -256,14 +276,18 @@ class FunctionDefinition(BaseModel):
                             if backslash_count % 2 == 0:
                                 terminated = True
                                 break
-                    if val_mode == "number" and token_str in (',', '}', ' '):
+                    if val_mode == "number":
                         current_prefix += token_str
                         after_dote = current_prefix.split(".")
                         if len(after_dote) > 1 and len(after_dote[-1]) >= 1:
                             terminated = True
                             break
                     # on stop sur un nb complet ou sur un "
-                if not terminated and val_mode in ("string", "regex") and token_str == '"':
+                if (
+                    not terminated
+                    and val_mode in ("string", "regex")
+                    and token_str == '"'
+                ):
                     quotes = '"'
                     quotes_ids = llm.encode(quotes).tolist()[0]
                     current_input.extend(quotes_ids)
@@ -287,17 +311,60 @@ class JsonWriter:
         self.coma = True
 
     def __enter__(self) -> "JsonWriter":
+        """
+        Enter the context manager and initialize the JSON writer.
+
+        Opens the file at the specified path in write mode and
+        writes the opening
+        bracket of a JSON array. Returns the context manager
+        instance for use in the `with` statement.
+
+        Returns:
+            JsonWriter: The context manager instance (self).
+
+        Raises:
+            IOError: If the file cannot be opened at the specified path.
+        """
         self.json_file = open(self.path, "w")
         self.json_file.write("[\n")
         return self
 
     def __exit__(self, exec_t, exec_v, exec_tb) -> None:
+        """
+        Exit the context manager and finalize the JSON file.
+
+        Closes the JSON file by writing a closing bracket
+        and closing the file handle.
+        This method is called when exiting a `with` statement.
+
+        Args:
+            exec_t: The exception type, if any exception
+            occurred in the with block.
+            exec_v: The exception instance, if any exception
+            occurred in the with block.
+            exec_tb: The exception traceback, if any exception
+            occurred in the with block.
+
+        Returns:
+            None
+        """
         if self.json_file:
             self.json_file.write("\n]")
             self.json_file.close()
         return self
 
     def write_json(self, data: Dict) -> None:
+        """
+        Write JSON data to the file.
+
+        If this is not the first write operation, prepends a comma and newline
+        to separate from previous entries. Writes the data as formatted JSON
+        with tab indentation.
+
+        Args:
+            data (Dict): Dictionary containing the data to be serialized
+            and written as JSON.
+        """
         if not self.coma:
             self.json_file.write(",\n")
         json_data = json.dumps(data, indent="\t")
@@ -310,6 +377,23 @@ class JsonParser:
         self.path = path
 
     def read_json(self) -> List[str]:
+        """
+        Read and parse a JSON file from the specified file path.
+
+        Attempts to open and load a JSON file from the
+        path stored in self.path.
+        Returns the parsed JSON data if successful.
+
+        Returns:
+            List[str]: The parsed JSON data from the file,
+            or None if an error occurs.
+
+        Raises (handled internally):
+            FileNotFoundError: If the file at self.path does not exist.
+                Prints an error message and returns None.
+            json.JSONDecodeError: If the file contains invalid JSON format.
+                Prints an error message and returns None.
+        """
         try:
             with open(self.path, "r") as file:
                 data = json.load(file)
@@ -323,6 +407,31 @@ class JsonParser:
     # makedirs / directory nested(imbriquer)
     # (dumps) -- create format json
     def create_ouptut(self, data_write: str) -> List[str]:
+        """
+        Create and write JSON data to a file at the specified path.
+
+        This method creates any necessary parent directories and writes the provided
+        data to a JSON file with UTF-8 encoding and tab indentation.
+
+        Args:
+            data_write (str): The data to be written to the JSON file.
+
+        Returns:
+            List[str]: The result of json.dump()
+            operation (typically None on success),
+            or None if an OSError occurs during directory
+            creation or file writing.
+        Raises:
+            Prints an error message if the directory
+            cannot be created due to OSError.
+        Note:
+            - The method creates parent directories
+            recursively if they don't exist.
+            - Files are written with UTF-8 encoding and tab indentation.
+            - Consider the return type annotation (List[str]) as it may
+            not accurately
+              reflect the actual return value from json.dump().
+        """
         try:
             os.makedirs(os.path.dirname(self.path), exist_ok=True)
             with open(self.path, "w", encoding="UTF-8") as output_file:
@@ -331,26 +440,3 @@ class JsonParser:
         except OSError:
             print(f"Directory {self.path} can not be created")
         return None
-
-
-# -inf == (-float('inf')) == 0% float - inf
-
-
-# constrain_char = ['+', ']', ')']
-                # pattern_finished = False
-                # for pattern in constrain_char:
-                #     if prefix.endswith(pattern):
-                #         pattern_finished = True
-                #         break
-                # open_parenthesis = prefix.count('(')
-                # close_parenthesis = prefix.count(')')
-                # if pattern_finished:
-                #     if open_parenthesis > close_parenthesis:
-                #         if token_str == ')':
-                #             allowed_token.append(token_id)
-                #     else:
-                #         if token_str == '"':
-                #             allowed_token.append(token_id)
-                # else:
-
-                # Return ONLY one regex. Do not repeat patterns.
