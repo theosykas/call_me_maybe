@@ -34,19 +34,19 @@ class FunctionDefinition(BaseModel):
             elif mode == "string":
                 if valid_token:
                     token_list = list(valid_token)
-                    valid = True
-                    allowed_char = set(token_list[0] + ' \\"*Ġ ')
+                    prompt_token = True
+                    allowed_char = set(token_list[0] + ' \\"Ġ ')
                     for c in token_str:
                         if c not in allowed_char:
-                            valid = False
+                            prompt_token = False
                             break
-                    if not valid:
+                    if not prompt_token:
                         continue  # Rejette le token s'il contient des lettres hors prompt
                 if prefix == "":
                     if token_str.startswith(" "):
                         continue
-                if prefix.count('*') + token_str.count('*') > 1:
-                    continue
+                # if prefix.count('*') + token_str.count('*') > 1:
+                #     continue
                 if '"' not in token_str:  # autorise tout les token
                     allowed_token.append(token_id)
                 elif token_str == '"':  # dernier guillemet seul "
@@ -55,32 +55,20 @@ class FunctionDefinition(BaseModel):
                     if prefix.endswith('\\') and not prefix.endswith('\\\\'):
                         allowed_token.append(token_id)
             elif mode == "regex":
+                if "\n" in token_str or "\r" in token_str:
+                    continue
                 if " " in token_str or '|' in token_str or '.' in token_str or '*' in token_str:
                     continue
-                # constrain_char = ['+', ']', ')']
-                # pattern_finished = False
-                # for pattern in constrain_char:
-                #     if prefix.endswith(pattern):
-                #         pattern_finished = True
-                #         break
-                # open_parenthesis = prefix.count('(')
-                # close_parenthesis = prefix.count(')')
-                # if pattern_finished:
-                #     if open_parenthesis > close_parenthesis:
-                #         if token_str == ')':
-                #             allowed_token.append(token_id)
-                #     else:
-                #         if token_str == '"':
-                #             allowed_token.append(token_id)
-                # else:
-                if '"' not in token_str:  # autorise tout les token
+                forbiden = set(['\\', '\n', '"'])
+                valid = True
+                for c in forbiden:
+                    if c in token_str:
+                        valid = False
+                        break
+                if valid:
                     allowed_token.append(token_id)
-                elif token_str == '"':  # dernier guillemet seul "
-                        # if open_parenthesis == close_parenthesis:
+                if token_str == '"':  # autorise token close "
                     allowed_token.append(token_id)
-                elif token_str == '\\"':
-                    if prefix.endswith('\\') and not prefix.endswith('\\\\'):
-                        allowed_token.append(token_id)
             else:
                 corresponding = False  # mis a false a chaques iterations
                 combined = prefix + token_str
@@ -119,6 +107,14 @@ class FunctionDefinition(BaseModel):
         for mask in range(vocab_size):
             if mask not in token_selection:
                 logits_list[mask] = -float("inf")  # ecrase les scores par -inf
+        quotes_ids = None
+        for token_id, token_str in token_map.items():
+            if token_str == '"':
+                quotes_ids = token_id
+                break
+        if quotes_ids is not None:
+            if mode == "regex" and current_prefix.endswith(')'):
+                logits_list[quotes_ids] += 50.0  # augmente la probabilité de fermeture 
         max_logits = max(logits_list)  # trouve le plus proche du max
         next_token_id = logits_list.index(max_logits)
         return next_token_id
@@ -168,27 +164,22 @@ class FunctionDefinition(BaseModel):
         # )
         systeme_prompt = (
             "### ROLE\n"
-            "You are a High-Precision API Router. Your goal is to convert User Requests into structured JSON arguments.\n\n"
-            
+            "You are a High-Precision Value Extractor. Your task is to identify the correct function and provide the exact raw values for its parameters based on the User Request.\n\n"
             "### TOOL CATALOG\n"
             f"{catalog}\n\n"
-            
-            "### STRATEGY & REGEX RULES\n"
-            "1. **Extraction**: Identify the specific word, digits, or characters mentioned in the request.\n"
-            "2. **Minimalism**: Use the shortest possible match. \n"
-            "3. **Regex Syntax (Strict)**:\n"
-            "   - To match specific vowels: ([aeiouAEIOU])\n"
-            "   - To match any numbers: ([0-9]+)\n"
-            "   - To match a literal word: the word itself (e.g., cat)\n"
-            "   - DO NOT use wildcards like '.*' or '.' (They are blocked by the system).\n\n"
-            
+            "### REGEX GENERATION RULES\n"
+            "When a regex is required, you must provide ONLY the pattern using this strict syntax:\n"
+            "- To match numbers/digits: ([0-9]+)\n"
+            "- To match vowels: ([aeiouAEIOU])\n"
+            "- To match a specific word: use the word itself (e.g., 'cat')\n"
+            "CRITICAL: Never use '.*' or broad wildcards. Be as specific as possible.\n\n"
+            "### EXTRACTION TASK\n"
+            "1. Identify the Function Name from the catalog.\n"
+            "2. Extract or generate the specific string, number, or regex pattern for each parameter.\n\n"
             "### USER REQUEST\n"
-            f'"{user_escape}"\n\n'
-            
-            "### TASK\n"
-            "Return the JSON object for the correct function with extracted parameters.\n\n"
-            
-            "### OUTPUT FORMAT\n"
+            f'"{user_prompt}"\n\n'
+            "### VALUE EXTRACTION\n"
+            "### Output\n"
             f"{formated_ouput}"
         )
         current_input = llm.encode(systeme_prompt).tolist()[0]
@@ -219,6 +210,7 @@ class FunctionDefinition(BaseModel):
             break
         if chose_fn:
             param_bridge = ', "parameters": {'
+            # param_bridge[-1]
             bridge_ids = llm.encode(param_bridge).tolist()[0]
             current_input.extend(bridge_ids)
             generate_ids.extend(bridge_ids)
@@ -235,12 +227,17 @@ class FunctionDefinition(BaseModel):
                 generate_ids.extend(key_ids)
                 current_prefix = ""
                 terminated = False
+                if val_mode == "string":
+                    valid_source = [user_prompt]
+                else:
+                    valid_source = []
+                # valid_source = [user_prompt] if val_mode == "string" else []
                 for _ in range(max_token):  # str or number
                     next_id = FunctionDefinition.constrain_decoding(
                         llm,
                         current_prefix,
                         current_input,
-                        [user_prompt],
+                        valid_source,
                         token_map,
                         mode=val_mode
                     )
@@ -259,14 +256,14 @@ class FunctionDefinition(BaseModel):
                             if backslash_count % 2 == 0:
                                 terminated = True
                                 break
-                    if val_mode == "number":
+                    if val_mode == "number" and token_str in (',', '}', ' '):
                         current_prefix += token_str
                         after_dote = current_prefix.split(".")
                         if len(after_dote) > 1 and len(after_dote[-1]) >= 1:
                             terminated = True
                             break
                     # on stop sur un nb complet ou sur un "
-                if not terminated and val_mode in ("string", "regex"):
+                if not terminated and val_mode in ("string", "regex") and token_str == '"':
                     quotes = '"'
                     quotes_ids = llm.encode(quotes).tolist()[0]
                     current_input.extend(quotes_ids)
@@ -337,3 +334,23 @@ class JsonParser:
 
 
 # -inf == (-float('inf')) == 0% float - inf
+
+
+# constrain_char = ['+', ']', ')']
+                # pattern_finished = False
+                # for pattern in constrain_char:
+                #     if prefix.endswith(pattern):
+                #         pattern_finished = True
+                #         break
+                # open_parenthesis = prefix.count('(')
+                # close_parenthesis = prefix.count(')')
+                # if pattern_finished:
+                #     if open_parenthesis > close_parenthesis:
+                #         if token_str == ')':
+                #             allowed_token.append(token_id)
+                #     else:
+                #         if token_str == '"':
+                #             allowed_token.append(token_id)
+                # else:
+
+                # Return ONLY one regex. Do not repeat patterns.

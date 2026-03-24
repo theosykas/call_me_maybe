@@ -4,8 +4,34 @@
 	"name": "fn_substitute_string_with_regex",
 	"parameters": {
 		"source_string": "Hello 34 I'm 233 years old",
-		"regex": "([0-9]+)\\s([0-9]+)\\s([0-9]+)\\s([0-9]+)\\s([0-9]+)\\s([0-9]+)\\s([0-9]+)\\s([0-9]+)\\s",
+		"regex": "([0-9]+)",
 		"replacement": "NUMBERS"
+	}
+},
+{
+	"prompt": "Replace all vowels in 'Programming is fun' with asterisks",
+	"name": "fn_substitute_string_with_regex",
+	"parameters": {
+		"source_string": "Programming is fun",
+		"regex": "([aeiouAEIOU])",
+		"replacement": "asterisk"
+	}
+},
+{
+	"prompt": "Substitute the word 'cat' with 'dog' in 'The cat sat on the mat with another cat'",
+	"name": "fn_substitute_string_with_regex",
+	"parameters": {
+		"source_string": "The cat sat on the mat with another cat",
+		"regex": "cat",
+		"replacement": "dog"
+	}
+},
+{
+	"prompt": "What is the sum of 2 and 3?",
+	"name": "fn_add_numbers",
+	"parameters": {
+		"a": 2.0,
+		"b": 3.0
 	}
 }
 ]
