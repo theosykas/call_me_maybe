@@ -25,13 +25,28 @@ class FunctionDefinition(BaseModel):
         allowed_token = []
         for token_id, token_str in token_map.items():  # lit pre calcul dict (map)
             if mode == "number":
-                numeric_value = set("0123456789.")
+                numeric_value = set("0123456789.-")
                 for c in token_str:
                     if c not in numeric_value:
                         break
                 else:
                     allowed_token.append(token_id)
             elif mode == "string":
+                if valid_token:
+                    token_list = list(valid_token)
+                    valid = True
+                    allowed_char = set(token_list[0] + ' \\"*Ġ ')
+                    for c in token_str:
+                        if c not in allowed_char:
+                            valid = False
+                            break
+                    if not valid:
+                        continue  # Rejette le token s'il contient des lettres hors prompt
+                if prefix == "":
+                    if token_str.startswith(" "):
+                        continue
+                if prefix.count('*') + token_str.count('*') > 1:
+                    continue
                 if '"' not in token_str:  # autorise tout les token
                     allowed_token.append(token_id)
                 elif token_str == '"':  # dernier guillemet seul "
@@ -40,9 +55,28 @@ class FunctionDefinition(BaseModel):
                     if prefix.endswith('\\') and not prefix.endswith('\\\\'):
                         allowed_token.append(token_id)
             elif mode == "regex":
-                if '"' not in token_str and '|' not in token_str:  # autorise tout les token
+                if " " in token_str or '|' in token_str or '.' in token_str or '*' in token_str:
+                    continue
+                # constrain_char = ['+', ']', ')']
+                # pattern_finished = False
+                # for pattern in constrain_char:
+                #     if prefix.endswith(pattern):
+                #         pattern_finished = True
+                #         break
+                # open_parenthesis = prefix.count('(')
+                # close_parenthesis = prefix.count(')')
+                # if pattern_finished:
+                #     if open_parenthesis > close_parenthesis:
+                #         if token_str == ')':
+                #             allowed_token.append(token_id)
+                #     else:
+                #         if token_str == '"':
+                #             allowed_token.append(token_id)
+                # else:
+                if '"' not in token_str:  # autorise tout les token
                     allowed_token.append(token_id)
                 elif token_str == '"':  # dernier guillemet seul "
+                        # if open_parenthesis == close_parenthesis:
                     allowed_token.append(token_id)
                 elif token_str == '\\"':
                     if prefix.endswith('\\') and not prefix.endswith('\\\\'):
@@ -114,35 +148,54 @@ class FunctionDefinition(BaseModel):
     ) -> str:
         user_escape = user_prompt.replace('\\', '\\\\').replace('"', '\\"')
         formated_ouput = f'{{"prompt": "{user_escape}", "name": "'
+        # systeme_prompt = (
+        #     "### Role\n"
+        #     "You are an API Router. You extract parameters from User Requests to build a valid JSON.\n\n"
+        #     "### Available Tools\n"
+        #     f"{catalog}\n"
+        #     "### Regex Rules\n"
+        #     "You MUST write the shortest and most accurate regex possible. NEVER use '.*' or wildcards. Use exact syntax:\n"
+        #     "- vowels → ([aeiouAEIOU])\n"
+        #     "- digits → ([0-9]+)\n"
+        #     "- exact word → the word itself (e.g. cat)\n\n"
+        #     "### User Request\n"
+        #     f'"{user_escape}"\n\n'
+        #     "### Task\n"
+        #     "1. Find the correct Action.\n"
+        #     "2. Extract the exact parameters.\n\n"
+        #     "### Output\n"
+        #     f"{formated_ouput}"
+        # )
         systeme_prompt = (
-            "### Role\n"
-            "You are an intelligent API Router. You map natural language "
-            "requests to the correct Function ID.\n\n"
-            "### Available Tools\n"
-            f"{catalog}\n"
-            "### User Request\n"
+            "### ROLE\n"
+            "You are a High-Precision API Router. Your goal is to convert User Requests into structured JSON arguments.\n\n"
+            
+            "### TOOL CATALOG\n"
+            f"{catalog}\n\n"
+            
+            "### STRATEGY & REGEX RULES\n"
+            "1. **Extraction**: Identify the specific word, digits, or characters mentioned in the request.\n"
+            "2. **Minimalism**: Use the shortest possible match. \n"
+            "3. **Regex Syntax (Strict)**:\n"
+            "   - To match specific vowels: ([aeiouAEIOU])\n"
+            "   - To match any numbers: ([0-9]+)\n"
+            "   - To match a literal word: the word itself (e.g., cat)\n"
+            "   - DO NOT use wildcards like '.*' or '.' (They are blocked by the system).\n\n"
+            
+            "### USER REQUEST\n"
             f'"{user_escape}"\n\n'
-            "### Task\n"
-            "1. Analyze the verbs and nouns in the User Request.\n"
-            "2. Find the 'Action' in the Available Tools "
-            "list that matches the request.\n"
-            "3. Select the corresponding ID number in catalog.\n\n"
-            "### Regex Rules (for fn_substitute_string_with_regex)\n"
-            "When the chosen function requires a regex parameter, follow these rules:\n"
-            "- Match digits: use [0-9] or \\d+\n"
-            "- Match vowels: use [aeiou]\n"
-            "- Match a specific word exactly: use the word as-is (e.g. cat)\n"
-            "- Keep the regex as SHORT and SIMPLE as possible\n"
-            "- NEVER chain patterns with | or \\w+ repeatedly\n"
-            "- ONE pattern only, no alternations\n\n"
-            "### Output\n"
+            
+            "### TASK\n"
+            "Return the JSON object for the correct function with extracted parameters.\n\n"
+            
+            "### OUTPUT FORMAT\n"
             f"{formated_ouput}"
         )
         current_input = llm.encode(systeme_prompt).tolist()[0]
         generate_ids = []
         current_prefix = ""
         fn_names = [fn.name for fn in functions_reader]  # fn_greet ...
-        max_token = 128
+        max_token = 64
         chose_fn = None
         for _ in range(max_token):
             next_id = FunctionDefinition.constrain_decoding(  # seul token == fn_name
@@ -181,20 +234,19 @@ class FunctionDefinition(BaseModel):
                 current_input.extend(key_ids)
                 generate_ids.extend(key_ids)
                 current_prefix = ""
-                # val_mode = p_info.type
+                terminated = False
                 for _ in range(max_token):  # str or number
                     next_id = FunctionDefinition.constrain_decoding(
                         llm,
                         current_prefix,
                         current_input,
-                        [],
+                        [user_prompt],
                         token_map,
                         mode=val_mode
                     )
                     current_input.append(next_id)
                     generate_ids.append(next_id)
                     token_str = llm.decode([next_id])
-                    last_token = '"'
                     if val_mode in ("string", "regex"):  # and token_str == last_token:
                         backslash_count = 0
                         for char in reversed(current_prefix):
@@ -203,14 +255,22 @@ class FunctionDefinition(BaseModel):
                             else:
                                 break
                         current_prefix += token_str  # accumule
-                        if token_str == '"' and backslash_count % 2 == 0:
-                            break
+                        if current_prefix.endswith('"'):
+                            if backslash_count % 2 == 0:
+                                terminated = True
+                                break
                     if val_mode == "number":
                         current_prefix += token_str
                         after_dote = current_prefix.split(".")
                         if len(after_dote) > 1 and len(after_dote[-1]) >= 1:
+                            terminated = True
                             break
                     # on stop sur un nb complet ou sur un "
+                if not terminated and val_mode in ("string", "regex"):
+                    quotes = '"'
+                    quotes_ids = llm.encode(quotes).tolist()[0]
+                    current_input.extend(quotes_ids)
+                    generate_ids.extend(quotes_ids)
                 if i < len(params) - 1:
                     sep = ", "
                     sep_ids = llm.encode(sep).tolist()[0]
