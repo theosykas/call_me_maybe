@@ -12,6 +12,9 @@ run:
 	@echo "executing (LLM) Call_Me_Maybe"
 	$(PYTHON) $(MAIN_FILES)
 
+debug:
+	uv run python -m pdb -m ${SRC} --functions_definition ${FUNCTION_DEF_FILE} --input ${INPUT_FILE} --output ${OUTPUT_FILE}
+
 clean:
 	@echo "remove files"
 	rm -rf __pycache__ .venv .uv

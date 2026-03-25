@@ -12,10 +12,13 @@
     "prompt": "What is the sum of 2 and 3?"
   },
   {
+    "prompt": "add 2 and 3?"
+  },
+  {
     "prompt": "What is the sum of 265 and 345?"
   },
   {
-    "prompt": "Greet shrek"
+    "prompt": "say hello to Shrek"
   },
   {
     "prompt": "Greet john"
@@ -28,8 +31,5 @@
   },
   {
     "prompt": "What is the square root of 16?"
-  },
-  {
-    "prompt": "Calculate the square root of 144"
   }
 ]

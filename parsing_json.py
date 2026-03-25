@@ -5,7 +5,17 @@ import json
 import os
 
 
+class TypePrompt(BaseModel):
+    prompt: str = Field(min_length=1)
+
+
 class ParamInput(BaseModel):
+    """
+    A Pydantic model representing a parameter input.
+
+    Attributes:
+        type (str): The type of the parameter. Must be a non-empty string.
+    """
     type: str = Field(min_length=1)
 
 
@@ -60,13 +70,29 @@ class FunctionDefinition(BaseModel):
         valid_token choices.
         """
         allowed_token = []
+        stop_token = {',', ' ', '}'}
         for token_id, token_str in token_map.items():  # lit pre calcul dict (map)
             if mode == "number":
                 numeric_value = set("0123456789.-")
+                valid_nb = True
                 for c in token_str:
                     if c not in numeric_value:
+                        valid_nb = False
                         break
-                else:
+                if valid_nb:
+                    allowed_token.append(token_id)
+                elif token_str in stop_token:
+                    allowed_token.append(token_id)
+            elif mode == "integer":
+                int_value = set("0123456789-")
+                valid_int = True
+                for c in token_str:
+                    if c not in int_value:
+                        valid_int = False
+                        break
+                if valid_int:
+                    allowed_token.append(token_id)
+                elif token_str in stop_token:
                     allowed_token.append(token_id)
             elif mode == "string":
                 if valid_token:
@@ -117,7 +143,7 @@ class FunctionDefinition(BaseModel):
                         corresponding = True
                         break
                 if corresponding:
-                    allowed_token.append(token_id)  # add token id to set allowed token
+                    allowed_token.append(token_id)  # add token id
                     continue  # -> next_token
                 if token_str == '"':  # end of word nom complet
                     for choice in valid_token:
@@ -142,13 +168,16 @@ class FunctionDefinition(BaseModel):
         allowed_token = set(allowed_token)
         token_selection = set(
             FunctionDefinition.get_allowed_token(
-                current_prefix, allowed_token, token_map, mode
+                current_prefix,
+                allowed_token,
+                token_map,
+                mode
             )
         )
         vocab_size = len(logits_list)
         for mask in range(vocab_size):
             if mask not in token_selection:
-                logits_list[mask] = -float("inf")  # ecrase les scores par -inf
+                logits_list[mask] = -float("inf")
         quotes_ids = None
         for token_id, token_str in token_map.items():
             if token_str == '"':
@@ -156,18 +185,53 @@ class FunctionDefinition(BaseModel):
                 break
         if quotes_ids is not None:
             if mode == "regex" and current_prefix.endswith(")"):
-                logits_list[quotes_ids] += 50.0  # augmente la probabilité de fermeture
-        max_logits = max(logits_list)  # trouve le plus proche du max
+                logits_list[quotes_ids] += 50.0
+        max_logits = max(logits_list)
         next_token_id = logits_list.index(max_logits)
         return next_token_id
 
     @staticmethod
     def format_argument(args: Dict[str, ParamInput]) -> str:
+        """
+        Format the argument dictionary keys into a string representation.
+
+        Args:
+            args: A dictionary mapping argument names to their
+            ParamInput values.
+
+        Returns:
+            A string representation of the dictionary keys as a list.
+        """
         return str(list(args.keys()))
 
     # text_to_prompt = [0] fn.name = fn_add_nb fn.description = fn.decription args = [a, b]
     @staticmethod
     def function_catalog(functions: List["FunctionDefinition"]) -> str:
+        """
+        Generate a formatted catalog of function definitions.
+
+        Creates a human-readable string representation
+        of multiple function definitions,
+        including their index, name, description, and arguments.
+
+        Args:
+            functions: A list of FunctionDefinition objects to be cataloged.
+
+        Returns:
+            A formatted string containing the catalog
+            of all functions, where each function
+            is represented with its ID, name,
+            description, and arguments on separate lines.
+
+        Example:
+            If given two functions, the output would be:
+            ID: [0] | FUNCTION_NAME 'function_name'
+            DESCRIPTION: Function description
+            Args: arg1: type, arg2: type
+            ID: [1] | FUNCTION_NAME 'another_function'
+            DESCRIPTION: Another description
+            Args: arg3: type
+        """
         catalog_function = ""
         for i, fn in enumerate(functions):
             args_list = FunctionDefinition.format_argument(fn.parameters)
@@ -188,7 +252,8 @@ class FunctionDefinition(BaseModel):
         formated_ouput = f'{{"prompt": "{user_escape}", "name": "'
         systeme_prompt = (
             "### ROLE\n"
-            "You are a High-Precision Value Extractor. Your task is to identify the correct function and provide the exact raw values for its parameters based on the User Request.\n\n"
+            "You are a High-Precision Value Extractor. Your task is to"
+            "identify the correct function and provide the exact raw values for its parameters based on the User Request.\n\n"
             "### TOOL CATALOG\n"
             f"{catalog}\n\n"
             "### REGEX GENERATION RULES\n"
@@ -214,7 +279,12 @@ class FunctionDefinition(BaseModel):
         chose_fn = None
         for _ in range(max_token):
             next_id = FunctionDefinition.constrain_decoding(  # seul token == fn_name
-                llm, current_prefix, current_input, fn_names, token_map, mode="catalog"
+                llm,
+                current_prefix,
+                current_input,
+                fn_names,
+                token_map,
+                mode="catalog"
             )
             current_input.append(next_id)
             generate_ids.append(next_id)  # token fn_name
@@ -229,14 +299,12 @@ class FunctionDefinition(BaseModel):
             break
         if chose_fn:
             param_bridge = ', "parameters": {'
-            # param_bridge[-1]
             bridge_ids = llm.encode(param_bridge).tolist()[0]
             current_input.extend(bridge_ids)
             generate_ids.extend(bridge_ids)
             params = list(chose_fn.parameters.items())
-            for i, (p_name, p_info) in enumerate(
-                params
-            ):  # boucle sur les enum param name: string
+            for i, (p_name, p_info) in enumerate(params):  # boucle sur les enum param name: string
+                # prefix = "{" if i == 0 else ', '
                 key_str = f' "{p_name}": '
                 val_mode = p_info.type
                 if p_name == "regex":
@@ -252,6 +320,13 @@ class FunctionDefinition(BaseModel):
                     valid_source = [user_prompt]
                 else:
                     valid_source = []
+                replace_dict = {
+                    "asterisk": "*",
+                    "dote": ".",
+                    "underscore": "_",
+                    "dash": "-",
+                    "space": " "
+                }
                 for _ in range(max_token):  # str or number
                     next_id = FunctionDefinition.constrain_decoding(
                         llm,
@@ -262,7 +337,7 @@ class FunctionDefinition(BaseModel):
                         mode=val_mode,
                     )
                     current_input.append(next_id)
-                    generate_ids.append(next_id)
+                    # generate_ids.append(next_id)
                     token_str = llm.decode([next_id])
                     if val_mode in ("string", "regex"):  # and token_str == last_token:
                         backslash_count = 0
@@ -277,12 +352,23 @@ class FunctionDefinition(BaseModel):
                                 terminated = True
                                 break
                     if val_mode == "number":
-                        current_prefix += token_str
-                        after_dote = current_prefix.split(".")
-                        if len(after_dote) > 1 and len(after_dote[-1]) >= 1:
+                        # after_dote = current_prefix.split(".")
+                        # if len(after_dote) > 1 and len(after_dote[-1]) >= 1:
+                        if token_str in {',', '}', ' '}:
+                            if '.' not in current_prefix:
+                                current_prefix += ".0"
                             terminated = True
                             break
-                    # on stop sur un nb complet ou sur un "
+                        current_prefix += token_str
+                    if val_mode == "integer":
+                        if token_str in {',', '}', ' '}:
+                            terminated = True
+                            break
+                        current_prefix += token_str
+                output = current_prefix
+                clean = output.strip('"').lower()
+                if p_name == "replacement" and clean in replace_dict:
+                    output = output.lower().replace(clean, replace_dict[clean])
                 if (
                     not terminated
                     and val_mode in ("string", "regex")
@@ -292,6 +378,9 @@ class FunctionDefinition(BaseModel):
                     quotes_ids = llm.encode(quotes).tolist()[0]
                     current_input.extend(quotes_ids)
                     generate_ids.extend(quotes_ids)
+                    # output += '"'
+                val_ids = llm.encode(output).tolist()[0]
+                generate_ids.extend(val_ids)
                 if i < len(params) - 1:
                     sep = ", "
                     sep_ids = llm.encode(sep).tolist()[0]
@@ -306,6 +395,18 @@ class FunctionDefinition(BaseModel):
 
 class JsonWriter:
     def __init__(self, path: str) -> None:
+        """
+        Initialize the JSON parser object.
+
+        Args:
+            path (str): The file path to the JSON file to be parsed.
+
+        Attributes:
+            path (str): The file path to the JSON file.
+            json_file (None): Placeholder for the loaded JSON file content.
+            coma (bool): Flag indicating whether
+            commas are present (default: True).
+        """
         self.path = path
         self.json_file = None
         self.coma = True
@@ -374,6 +475,14 @@ class JsonWriter:
 
 class JsonParser:
     def __init__(self, path: Optional[str]) -> None:
+        """
+        Initialize the instance with an optional file path.
+        Args:
+            path (Optional[str]): The file path to be used.
+            Can be None if no path is provided.
+        Returns:
+            None
+        """
         self.path = path
 
     def read_json(self) -> List[str]:
@@ -410,7 +519,8 @@ class JsonParser:
         """
         Create and write JSON data to a file at the specified path.
 
-        This method creates any necessary parent directories and writes the provided
+        This method creates any necessary parent directories
+        and writes the provided
         data to a JSON file with UTF-8 encoding and tab indentation.
 
         Args:
@@ -440,3 +550,7 @@ class JsonParser:
         except OSError:
             print(f"Directory {self.path} can not be created")
         return None
+
+# /   {
+# //     "prompt": "Calculate the square root of 144"
+# //   }
