@@ -16,6 +16,7 @@ class ParamInput(BaseModel):
     Attributes:
         type (str): The type of the parameter. Must be a non-empty string.
     """
+
     type: str = Field(min_length=1)
 
 
@@ -33,44 +34,44 @@ class FunctionDefinition(BaseModel):
         mode: str = "string",
     ) -> List[int]:
         """
-    Filter tokens based on allowed characters and patterns for
-    constrained text generation.
+        Filter tokens based on allowed characters and patterns for
+        constrained text generation.
 
-    This static method filters a token map to return only token
-    IDs that meet specific
-    constraints depending on the parsing mode. It's used to restrict token
-    generation to
-    valid continuations based on the current prefix and valid token options.
+        This static method filters a token map to return only token
+        IDs that meet specific
+        constraints depending on the parsing mode. It's used to restrict token
+        generation to
+        valid continuations based on the current prefix and valid token options.
 
-    Args:
-        prefix (str): The current text prefix being built up during generation.
-        valid_token (List[int]): A list of valid token strings or choices that
-        can follow.
-        token_map (Dict[int, str]): A mapping of token IDs to their string
-        representations.
-        mode (str, optional): The filtering mode. Defaults to "string".
-            - "number": Only allows tokens
-            containing numeric characters (0-9.-).
-            - "string": Filters tokens for JSON string parsing,
-            handling quotes and escapes.
-            - "regex": Filters tokens for regex patterns,
-            excluding special characters.
-            - Other: Filters tokens that are valid prefixes of
-            choices in valid_token.
+        Args:
+            prefix (str): The current text prefix being built up during generation.
+            valid_token (List[int]): A list of valid token strings or choices that
+            can follow.
+            token_map (Dict[int, str]): A mapping of token IDs to their string
+            representations.
+            mode (str, optional): The filtering mode. Defaults to "string".
+                - "number": Only allows tokens
+                containing numeric characters (0-9.-).
+                - "string": Filters tokens for JSON string parsing,
+                handling quotes and escapes.
+                - "regex": Filters tokens for regex patterns,
+                excluding special characters.
+                - Other: Filters tokens that are valid prefixes of
+                choices in valid_token.
 
-        Returns:
-        List[int]: A list of token IDs that satisfy the constraints of the
-        given mode.
+            Returns:
+            List[int]: A list of token IDs that satisfy the constraints of the
+            given mode.
 
-        Examples:
-        - In "number" mode, filters to only numeric tokens.
-        - In "string" mode, handles JSON string escaping and quote validation.
-        - In "regex" mode, excludes regex special characters and newlines.
-        - In default mode, ensures tokens are valid continuations of
-        valid_token choices.
+            Examples:
+            - In "number" mode, filters to only numeric tokens.
+            - In "string" mode, handles JSON string escaping and quote validation.
+            - In "regex" mode, excludes regex special characters and newlines.
+            - In default mode, ensures tokens are valid continuations of
+            valid_token choices.
         """
         allowed_token = []
-        stop_token = {',', ' ', '}'}
+        stop_token = {",", " "}
         for token_id, token_str in token_map.items():  # lit pre calcul dict (map)
             if mode == "number":
                 numeric_value = set("0123456789.-")
@@ -95,10 +96,12 @@ class FunctionDefinition(BaseModel):
                 elif token_str in stop_token:
                     allowed_token.append(token_id)
             elif mode == "string":
+                if "\r" in token_str or "\n" in token_str:
+                    continue
                 if valid_token:
                     token_list = list(valid_token)
                     prompt_token = True
-                    allowed_char = set(token_list[0] + ' \\"Ġ ')
+                    allowed_char = set(token_list[0] + ' \\"Ġ{}()?$')
                     for c in token_str:
                         if c not in allowed_char:
                             prompt_token = False
@@ -168,10 +171,7 @@ class FunctionDefinition(BaseModel):
         allowed_token = set(allowed_token)
         token_selection = set(
             FunctionDefinition.get_allowed_token(
-                current_prefix,
-                allowed_token,
-                token_map,
-                mode
+                current_prefix, allowed_token, token_map, mode
             )
         )
         vocab_size = len(logits_list)
@@ -303,7 +303,9 @@ class FunctionDefinition(BaseModel):
             current_input.extend(bridge_ids)
             generate_ids.extend(bridge_ids)
             params = list(chose_fn.parameters.items())
-            for i, (p_name, p_info) in enumerate(params):  # boucle sur les enum param name: string
+            for i, (p_name, p_info) in enumerate(
+                params
+            ):  # boucle sur les enum param name: string
                 # prefix = "{" if i == 0 else ', '
                 key_str = f' "{p_name}": '
                 val_mode = p_info.type
@@ -325,7 +327,7 @@ class FunctionDefinition(BaseModel):
                     "dote": ".",
                     "underscore": "_",
                     "dash": "-",
-                    "space": " "
+                    "space": " ",
                 }
                 for _ in range(max_token):  # str or number
                     next_id = FunctionDefinition.constrain_decoding(
@@ -337,7 +339,6 @@ class FunctionDefinition(BaseModel):
                         mode=val_mode,
                     )
                     current_input.append(next_id)
-                    # generate_ids.append(next_id)
                     token_str = llm.decode([next_id])
                     if val_mode in ("string", "regex"):  # and token_str == last_token:
                         backslash_count = 0
@@ -352,20 +353,26 @@ class FunctionDefinition(BaseModel):
                                 terminated = True
                                 break
                     if val_mode == "number":
-                        # after_dote = current_prefix.split(".")
-                        # if len(after_dote) > 1 and len(after_dote[-1]) >= 1:
-                        if token_str in {',', '}', ' '}:
-                            if '.' not in current_prefix:
+                        if token_str in {",", "}", " "}:
+                            if "." not in current_prefix:
                                 current_prefix += ".0"
                             terminated = True
                             break
                         current_prefix += token_str
                     if val_mode == "integer":
-                        if token_str in {',', '}', ' '}:
+                        if token_str in {",", "}", " "}:
                             terminated = True
                             break
                         current_prefix += token_str
                 output = current_prefix
+                output = output.replace("\r", "")
+                # Nettoyage forcé des espaces et des accolades hallucinées à la fin
+                while output.endswith(' "') or output.endswith(' }"'):
+                    if output.endswith(' "'):
+                        output = output[:-2] + '"'
+                    elif output.endswith(' }"'):
+                        output = output[:-3] + '"'
+                output = output.rstrip()
                 clean = output.strip('"').lower()
                 if p_name == "replacement" and clean in replace_dict:
                     output = output.lower().replace(clean, replace_dict[clean])
@@ -390,7 +397,10 @@ class FunctionDefinition(BaseModel):
         close_ids = llm.encode(closing).tolist()[0]
         current_input.extend(close_ids)
         generate_ids.extend(close_ids)
-        return formated_ouput + llm.decode(generate_ids)
+        decoded = llm.decode(generate_ids)
+        decoded = decoded.replace("\\r", "")
+        decoded = " ".join(decoded.split())
+        return formated_ouput + decoded
 
 
 class JsonWriter:
@@ -550,6 +560,7 @@ class JsonParser:
         except OSError:
             print(f"Directory {self.path} can not be created")
         return None
+
 
 # /   {
 # //     "prompt": "Calculate the square root of 144"
